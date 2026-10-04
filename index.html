@@ -20,8 +20,8 @@ dialog{border:0;border-radius:16px;width:92%;max-width:420px;background:var(--c)
 <script>
 const SB_URL='https://tabopmarqhonvzrispwz.supabase.co',SB_KEY='sb_publishable_iXFiDuQsMqW4JUj6SeScSw_QbVVJsrb';
 const sb=supabase.createClient(SB_URL,SB_KEY);
-const CATS=['Casa','Spesa','Ristoranti','Cibo asporto','Trasporti','Salute','Svago','Abbonamenti','Altro'];
-let rows=[],tab='spese',sv='s';
+const CATS=['Casa','Spesa','Ristoranti','Cibo asporto','Trasporti','Salute','Svago','Sport','Abbonamenti','Altro'];
+let rows=[],tab='spese',sv='s',pf='Simone';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -50,17 +50,17 @@ if(localStorage.ln===today())return;localStorage.ln=today();
 const r=await navigator.serviceWorker.ready;r.showNotification('Pagamenti in scadenza',{body:d.map(b=>`${b.title} ${eur(b.amount)}`).join(', ')})}
 
 function render(){
-const tabs=[['spese','💶 Spese'],['agenda','📅 Agenda'],['scadenze','🔔 Scadenze'],['consigli','💡 Consigli']];
+const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔔 Scadenze'],['consigli','💡 Consigli']];
 let h=dueSoon().map(b=>`<div class="card warn">⚠️ ${esc(b.title)} ${eur(b.amount)} – ${days(b.date)<0?'scaduta':days(b.date)==0?'oggi':'tra '+days(b.date)+' gg'}</div>`).join('');
 if(tab==='spese'&&sv==='r')h+=seg()+savings();
 if(tab==='spese'&&sv!=='r'){h+=seg()+balance();const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
 h+=`<div class=card><div class=m>Speso questo mese</div><h2 style="margin:0">${eur(t)}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>
 ${charts()}${rec('expense')}<h2>Ultime spese</h2>`+
 of('expense').slice(0,40).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')}
-if(tab==='agenda'){h+='<h2>Prossimi appuntamenti</h2>'+(of('appointment').filter(r=>r.date>=today()).sort((a,b)=>(a.date+a.time)>(b.date+b.time)?1:-1).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} ${esc(r.time||'')}</div></div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div>`).join('')||'<p class=m>Nessun appuntamento</p>')}
+if(tab==='profili')h+=profile();
 if(tab==='scadenze'){h+='<h2>Da pagare</h2>'+(of('bill').filter(r=>!r.paid).sort((a,b)=>a.date>b.date?1:-1).map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m style="${days(r.date)<0?'color:var(--r)':''}">${fd(r.date)}${r.recurring?' · mensile':''} · paga ${esc(r.payer||'Comune')}${r.alt?' 🔁':''}</div></div><div><button class=s onclick="pay('${r.id}')">Pagata</button> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')||'<p class=m>Nulla da pagare 🎉</p>')}
 if(tab==='consigli')h+=`<h2>Suggerimenti</h2>`+advice().map(a=>`<div class=card>${a}</div>`).join('')+`<button class=b onclick=askNotif()>Attiva avvisi sul telefono</button><button class=s style="margin-top:8px" onclick="sb.auth.signOut().then(login)">Esci</button>`;
-app.innerHTML=`<div id=top></div>${h}<button class=fab onclick=openForm()>+</button><nav>${tabs.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</nav>`}
+app.innerHTML=`<div id=top></div>${h}${tab==='profili'?'':'<button class=fab onclick=openForm()>+</button>'}<nav>${tabs.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</nav>`}
 
 function advice(){const out=[],m=monthExp(ym()),p=monthExp(ym(-1)),t=sum(m),pt=sum(p),b=budget(),now=new Date();
 const left=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate();
@@ -76,27 +76,33 @@ const av=Math.max(sum(monthExp(ym(-1))),t);
 if(sav>0&&av){const mm=sav/av;out.push(mm<3?`🛟 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Prima di investire costruisci un fondo di emergenza di 3-6 mesi su un conto deposito o remunerato, sempre disponibile.`:`📊 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Oltre al fondo di emergenza, in base a rischio e orizzonte si considerano di solito titoli di Stato (BTP/BOT), conti deposito, fondi pensione (con vantaggi fiscali) o ETF diversificati a lungo termine. Sono informazioni generali, non consulenza finanziaria: per cifre importanti rivolgiti a un consulente indipendente.`)}
 return out}
 
-const COL=['#0a84ff','#2a9d4a','#ff9f0a','#e5383b','#bf5af2','#64d2ff','#ff375f','#8e8e93'];let per='m';
-function charts(){
+const COL=['#0a84ff','#2a9d4a','#ff9f0a','#e5383b','#bf5af2','#64d2ff','#ff375f','#8e8e93','#ffd60a','#30d158','#5e5ce6','#ac8e68'];let per='m';
+const pbar=()=>`<div class=card><div class=row>${[['m','Questo mese'],['p','Mese scorso'],['t','Tutto']].map(([k,l])=>`<button class=s style="${per===k?'background:var(--a);color:#fff':''}" onclick="per='${k}';render()">${l}</button>`).join('')}</div></div>`;
+function profile(){const P=pf,w=r=>(r.who||'Comune')===P,pk=r=>per==='m'?r.date.startsWith(ym()):per==='p'?r.date.startsWith(ym(-1)):true,col=v=>v>=0?'var(--g)':'var(--r)',ex=of('expense').filter(w),inc=of('income').filter(w),e1=sum(ex.filter(pk)),i1=sum(inc.filter(pk)),T=sum(inc)-sum(ex);
+const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,6);
+return `<div class=card><div class=row style="gap:6px">${['Simone','Valeria'].map(k=>`<button class=s style="flex:1;padding:9px;${pf===k?'background:var(--a);color:#fff':''}" onclick="pf='${k}';render()">${k}</button>`).join('')}</div></div>`+pbar()+
+`<div class=card><b>Riepilogo ${P}</b><div class=row><span>Spese</span><b>${eur(e1)}</b></div><div class=row><span>Entrate</span><b>${eur(i1)}</b></div><div class=row><span>Risparmio del periodo</span><b style="color:${col(i1-e1)}">${eur(i1-e1)}</b></div><div class=row><span>Risparmio totale</span><b style="color:${col(T)}">${eur(T)}</b></div><div class=m>Solo voci intestate a ${P}: quelle "Comune" non sono incluse.</div></div>`+charts(P)+
+`<div class=card><b>Risparmio mese per mese</b>`+(ms.map(m=>{const a=sum(inc.filter(r=>r.date.startsWith(m))),b=sum(ex.filter(r=>r.date.startsWith(m)));return `<div class=row><span>${m.slice(5)}/${m.slice(0,4)}</span><span class=m>+${eur(a)} −${eur(b)}</span><b style="color:${col(a-b)}">${eur(a-b)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>')+`</div>`}
+function charts(P){
 const pick=r=>per==='m'?r.date.startsWith(ym()):per==='p'?r.date.startsWith(ym(-1)):true;
-const ex=of('expense').filter(pick),t=sum(ex);
+const ex=of('expense').filter(pick).filter(r=>!P||(r.who||'Comune')===P),t=sum(ex);
 const grp=(k,d)=>Object.entries(ex.reduce((o,r)=>{const x=r[k]||d;o[x]=(o[x]||0)+Number(r.amount);return o},{})).sort((a,b)=>b[1]-a[1]);
 const cats=grp('category','Altro'),whos=grp('who','Comune');
-let h=`<div class=card><div class=row>${[['m','Questo mese'],['p','Mese scorso'],['t','Tutto']].map(([k,l])=>`<button class=s style="${per===k?'background:var(--a);color:#fff':''}" onclick="per='${k}';render()">${l}</button>`).join('')}</div></div>`;
+let h=P?'':pbar();
 if(!t)return h+'<div class=card><span class=m>Nessuna spesa nel periodo</span></div>';
-let off=0;const donut=cats.map(([k,v],i)=>{const l=v/t*251.33,c=`<circle r=40 cx=60 cy=60 fill=none stroke="${COL[i%8]}" stroke-width=20 stroke-dasharray="${l} ${251.33-l}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`;off+=l;return c}).join('');
-h+=`<div class=card><b>Per categoria</b><div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 120 120" width=130 height=130>${donut}<text x=60 y=64 text-anchor=middle font-size=12 fill=currentColor>${eur(t)}</text></svg><div style="flex:1">${cats.map(([k,v],i)=>`<div class=row style="padding:2px 0"><span><span style="color:${COL[i%8]}">●</span> ${esc(k)}</span><span class=m>${Math.round(v/t*100)}% · ${eur(v)}</span></div>`).join('')}</div></div></div>`;
-h+=`<div class=card><b>Per persona</b>${whos.map(([k,v])=>`<div style="margin:8px 0"><div class=row style="padding:0"><span>${esc(k)}</span><span>${eur(v)} <span class=m>(${Math.round(v/t*100)}%)</span></span></div><div class=bar><i style="width:${v/t*100}%"></i></div></div>`).join('')}</div>`;
-const mo=[-5,-4,-3,-2,-1,0].map(o=>{const k=ym(o);return[k.slice(5)+'/'+k.slice(2,4),sum(of('expense').filter(r=>r.date.startsWith(k)))]}),mx=Math.max(...mo.map(x=>x[1]),1);
+let off=0;const donut=cats.map(([k,v],i)=>{const l=v/t*251.33,c=`<circle r=40 cx=60 cy=60 fill=none stroke="${COL[i%COL.length]}" stroke-width=20 stroke-dasharray="${l} ${251.33-l}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`;off+=l;return c}).join('');
+h+=`<div class=card><b>Per categoria</b><div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 120 120" width=130 height=130>${donut}<text x=60 y=64 text-anchor=middle font-size=12 fill=currentColor>${eur(t)}</text></svg><div style="flex:1">${cats.map(([k,v],i)=>`<div class=row style="padding:2px 0"><span><span style="color:${COL[i%COL.length]}">●</span> ${esc(k)}</span><span class=m>${Math.round(v/t*100)}% · ${eur(v)}</span></div>`).join('')}</div></div></div>`;
+if(!P)h+=`<div class=card><b>Per persona</b>${whos.map(([k,v])=>`<div style="margin:8px 0"><div class=row style="padding:0"><span>${esc(k)}</span><span>${eur(v)} <span class=m>(${Math.round(v/t*100)}%)</span></span></div><div class=bar><i style="width:${v/t*100}%"></i></div></div>`).join('')}</div>`;
+const mo=[-5,-4,-3,-2,-1,0].map(o=>{const k=ym(o);return[k.slice(5)+'/'+k.slice(2,4),sum(of('expense').filter(r=>r.date.startsWith(k)&&(!P||(r.who||'Comune')===P)))]}),mx=Math.max(...mo.map(x=>x[1]),1);
 h+=`<div class=card><b>Ultimi 6 mesi</b><div style="display:flex;align-items:flex-end;gap:8px;height:120px;margin-top:8px">${mo.map(([k,v])=>`<div style="flex:1;text-align:center"><div class=m style="font-size:10px">${Math.round(v)}</div><div style="background:var(--a);height:${v/mx*80}px;border-radius:4px 4px 0 0"></div><div class=m style="font-size:11px">${k}</div></div>`).join('')}</div></div>`;
 const big=[...ex].sort((a,b)=>b.amount-a.amount)[0],nd=per==='m'?new Date().getDate():per==='p'?new Date(new Date().getFullYear(),new Date().getMonth(),0).getDate():0;
 h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(t/ex.length)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
 return h}
 const seg=()=>`<div class=card style="padding:6px"><div class=row style="gap:6px">${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class=s style="flex:1;padding:9px;${sv===k?'background:var(--a);color:#fff':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
 function balance(){const ls=rows.filter(r=>r.type==='settle').sort((a,b)=>a.created_at<b.created_at?1:-1)[0],
-ex=of('expense').filter(r=>!ls||r.created_at>ls.created_at),S=sum(ex.filter(r=>r.who==='Simone')),V=sum(ex.filter(r=>r.who==='Valeria')),d=(S-V)/2,
+ex=of('expense').filter(r=>r.split!==false&&(!ls||r.created_at>ls.created_at)),S=sum(ex.filter(r=>r.who==='Simone')),V=sum(ex.filter(r=>r.who==='Valeria')),d=(S-V)/2,
 txt=Math.abs(d)<0.005?'Siete in pari ✅':d>0?`Valeria deve a Simone <b>${eur(d)}</b>`:`Simone deve a Valeria <b>${eur(-d)}</b>`;
-return `<div class=card><b>Saldo tra Simone e Valeria</b><div class=row><span>Simone ha speso</span><b>${eur(S)}</b></div><div class=row><span>Valeria ha speso</span><b>${eur(V)}</b></div><div style="font-size:18px;margin:6px 0">${txt}</div><div class=m>Conteggio dal ${ls?fd(ls.date):'inizio'}. Le spese "Comune" non contano; quelle di Simone e Valeria si dividono a metà.</div><button class=b onclick="settle(${d.toFixed(2)})">SALDO</button></div>`}
+return `<div class=card><b>Saldo tra Simone e Valeria</b><div class=row><span>Simone ha speso</span><b>${eur(S)}</b></div><div class=row><span>Valeria ha speso</span><b>${eur(V)}</b></div><div style="font-size:18px;margin:6px 0">${txt}</div><div class=m>Conteggio dal ${ls?fd(ls.date):'inizio'}. Non contano le spese "Comune" e quelle senza la spunta "Conta nel saldo"; le altre si dividono a metà.</div><button class=b onclick="settle(${d.toFixed(2)})">SALDO</button></div>`}
 async function settle(d){if(!confirm('Azzerare il conto e ricominciare da zero?'))return;
 const t=Math.abs(d)<0.005?'Pari':d>0?'Valeria → Simone':'Simone → Valeria';
 const{error}=await sb.from('entries').insert({type:'settle',title:t,amount:Math.abs(d),date:today()});if(error){alert('Errore: '+error.message);return}load()}
@@ -107,22 +113,22 @@ return `<div class=card><div class=m>Risparmio totale (entrate − spese)</div><
 async function recur(){let ch=false;
 for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){let c=r,n=0;
 while(c&&c.date<=today()&&n++<24){const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
-const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
+const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,split:c.split,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
 return ch}
-function openForm(T,id){T=T||{spese:sv==='r'?'income':'expense',agenda:'appointment',scadenze:'bill'}[tab]||'expense';
+function openForm(T,id){T=T||{spese:sv==='r'?'income':'expense',scadenze:'bill'}[tab]||'expense';
 const r=id?rows.find(x=>x.id===id):{},x=T==='appointment',b=T==='bill',i=T==='income',e=T==='expense',W=['Comune','Simone','Valeria'];
 const op=(a,v)=>a.map(o=>`<option${o===v?' selected':''}>${o}</option>`).join('');
 dlg.innerHTML=`<h3>${id?'Modifica':'Nuova'} ${{expense:'spesa',income:'entrata',appointment:'appuntamento',bill:'scadenza'}[T]}</h3>`+
 (i?`<div class=m>Motivazione</div><select id=f_c>${op(INC,r.category)}</select>`:`<input id=f_t placeholder=Descrizione value="${esc(r.title)}">`)+
 (x?'':`<input id=f_a type=number step=0.01 inputmode=decimal placeholder="Importo €" value="${r.amount??''}">`)+
 (e?`<select id=f_c>${op(CATS,r.category)}</select>`:'')+
-(e||i?`<div class=m>${i?'Ricevuto da':'Speso da'}</div><select id=f_w>${op(W,r.who||'Comune')}</select>`:'')+
+(e||i?`<div class=m>${i?'Ricevuto da':'Speso da'}</div><select id=f_w>${op(W,r.who||'Comune')}</select>`:'')+(e?`<label><input id=f_s type=checkbox style="width:auto"${r.split===false?'':' checked'}> Conta nel saldo tra Simone e Valeria</label>`:'')+
 (b?`<div class=m>Chi paga</div><select id=f_p>${op(W,r.payer||'Comune')}</select><label><input id=f_l type=checkbox style="width:auto"${r.alt?' checked':''}> Alterna Simone/Valeria ogni mese</label>`:'')+
 `<div class=m>Data</div><input id=f_d type=date value="${r.date||today()}">`+(x?`<input id=f_h type=time value="${r.time||''}">`:'')+
 (x?'':`<label><input id=f_r type=checkbox style="width:auto"${r.recurring?' checked':''}> Ricorrente ogni mese</label>`)+
 `<button class=b onclick="save('${T}','${id||''}')">Salva</button><button class=s onclick="dlg.close()">Annulla</button>`;dlg.showModal()}
 async function save(T,id){const g=k=>window[k]?window[k].value:null,t=T==='income'?g('f_c'):(g('f_t')||'').trim();if(!t||!f_d.value)return;
-const r={type:T,title:t,date:f_d.value,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:!!(window.f_r&&f_r.checked)};
+const r={type:T,title:t,date:f_d.value,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:!!(window.f_r&&f_r.checked),split:window.f_s?f_s.checked:null};
 const{error}=await(id?sb.from('entries').update(r).eq('id',id):sb.from('entries').insert(r));if(error){alert('Errore nel salvataggio: '+error.message);return}dlg.close();load()}
 async function del(id){if(confirm('Eliminare?')){await sb.from('entries').delete().eq('id',id);load()}}
 async function pay(id){const r=rows.find(x=>x.id===id);await sb.from('entries').update({paid:true}).eq('id',id);
