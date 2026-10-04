@@ -20,7 +20,7 @@ dialog{border:0;border-radius:16px;width:92%;max-width:420px;background:var(--c)
 <script>
 const SB_URL='https://tabopmarqhonvzrispwz.supabase.co',SB_KEY='sb_publishable_iXFiDuQsMqW4JUj6SeScSw_QbVVJsrb';
 const sb=supabase.createClient(SB_URL,SB_KEY);
-const CATS=['Casa','Spesa','Ristoranti','Trasporti','Salute','Svago','Abbonamenti','Altro'];
+const CATS=['Casa','Spesa','Ristoranti','Cibo asporto','Trasporti','Salute','Svago','Abbonamenti','Altro'];
 let rows=[],tab='spese',sv='s';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
