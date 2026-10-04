@@ -9,7 +9,7 @@
 main{max-width:600px;margin:auto;padding:12px}.card{background:var(--c);border-radius:14px;padding:12px 14px;margin:8px 0}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0}.m{color:var(--m);font-size:13px}
 h2{margin:12px 4px 4px}nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);padding-bottom:env(safe-area-inset-bottom);border-top:1px solid #8883}
-nav button{flex:1;border:0;background:none;padding:12px 0;font-size:12px;white-space:nowrap;color:var(--m)}nav button.on{color:var(--a);font-weight:700}
+nav button{flex:1;border:0;background:none;padding:12px 0;font-size:13px;color:var(--m)}nav button.on{color:var(--a);font-weight:700}
 .fab{position:fixed;right:18px;bottom:calc(70px + env(safe-area-inset-bottom));width:54px;height:54px;border-radius:27px;border:0;background:var(--a);color:#fff;font-size:30px}
 input,select,button.b{width:100%;padding:11px;margin:5px 0;border-radius:10px;border:1px solid #8885;background:var(--c);color:var(--t);font-size:16px}
 button.b{background:var(--a);color:#fff;border:0}button.s{border:0;background:#8882;color:var(--t);border-radius:8px;padding:6px 10px}
@@ -21,7 +21,7 @@ dialog{border:0;border-radius:16px;width:92%;max-width:420px;background:var(--c)
 const SB_URL='https://tabopmarqhonvzrispwz.supabase.co',SB_KEY='sb_publishable_iXFiDuQsMqW4JUj6SeScSw_QbVVJsrb';
 const sb=supabase.createClient(SB_URL,SB_KEY);
 const CATS=['Casa','Spesa','Ristoranti','Trasporti','Salute','Svago','Abbonamenti','Altro'];
-let rows=[],tab='spese';
+let rows=[],tab='spese',sv='s';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -50,15 +50,15 @@ if(localStorage.ln===today())return;localStorage.ln=today();
 const r=await navigator.serviceWorker.ready;r.showNotification('Pagamenti in scadenza',{body:d.map(b=>`${b.title} ${eur(b.amount)}`).join(', ')})}
 
 function render(){
-const tabs=[['spese','💶 Spese'],['agenda','📅 Agenda'],['scadenze','🔔 Scadenze'],['risparmi','💰 Risparmi'],['consigli','💡 Consigli']];
+const tabs=[['spese','💶 Spese'],['agenda','📅 Agenda'],['scadenze','🔔 Scadenze'],['consigli','💡 Consigli']];
 let h=dueSoon().map(b=>`<div class="card warn">⚠️ ${esc(b.title)} ${eur(b.amount)} – ${days(b.date)<0?'scaduta':days(b.date)==0?'oggi':'tra '+days(b.date)+' gg'}</div>`).join('');
-if(tab==='spese'){const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
+if(tab==='spese'&&sv==='r')h+=seg()+savings();
+if(tab==='spese'&&sv!=='r'){h+=seg()+balance();const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
 h+=`<div class=card><div class=m>Speso questo mese</div><h2 style="margin:0">${eur(t)}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>
 ${charts()}${rec('expense')}<h2>Ultime spese</h2>`+
 of('expense').slice(0,40).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')}
 if(tab==='agenda'){h+='<h2>Prossimi appuntamenti</h2>'+(of('appointment').filter(r=>r.date>=today()).sort((a,b)=>(a.date+a.time)>(b.date+b.time)?1:-1).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} ${esc(r.time||'')}</div></div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div>`).join('')||'<p class=m>Nessun appuntamento</p>')}
 if(tab==='scadenze'){h+='<h2>Da pagare</h2>'+(of('bill').filter(r=>!r.paid).sort((a,b)=>a.date>b.date?1:-1).map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m style="${days(r.date)<0?'color:var(--r)':''}">${fd(r.date)}${r.recurring?' · mensile':''} · paga ${esc(r.payer||'Comune')}${r.alt?' 🔁':''}</div></div><div><button class=s onclick="pay('${r.id}')">Pagata</button> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')||'<p class=m>Nulla da pagare 🎉</p>')}
-if(tab==='risparmi')h+=savings();
 if(tab==='consigli')h+=`<h2>Suggerimenti</h2>`+advice().map(a=>`<div class=card>${a}</div>`).join('')+`<button class=b onclick=askNotif()>Attiva avvisi sul telefono</button><button class=s style="margin-top:8px" onclick="sb.auth.signOut().then(login)">Esci</button>`;
 app.innerHTML=`<div id=top></div>${h}<button class=fab onclick=openForm()>+</button><nav>${tabs.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</nav>`}
 
@@ -72,15 +72,6 @@ const soon=of('bill').filter(x=>!x.paid&&days(x.date)<=7&&days(x.date)>=0);if(so
 const top=Object.entries(c1).sort((a,b)=>b[1]-a[1])[0];if(top)out.push(`🏷️ Categoria più cara: ${top[0]} (${eur(top[1])}).`);
 const inc=of('income'),mi=sum(inc.filter(r=>r.date.startsWith(ym()))),sav=sum(inc)-sum(of('expense'));
 if(mi){const q=(mi-t)/mi;out.push(q<0?`🚨 Questo mese le spese (${eur(t)}) superano le entrate (${eur(mi)}).`:q<.1?`⚠️ Stai risparmiando solo il ${Math.round(q*100)}% delle entrate del mese: valuta di ridurre le categorie più alte.`:`✅ Questo mese stai risparmiando il ${Math.round(q*100)}% delle entrate (${eur(mi-t)}).`)}else out.push('Inserisci le entrate del mese (scheda Risparmi) per avere consigli sul risparmio.');
-const bt=of('bill').map(b=>b.title.toLowerCase()).join(' ');let n=0;
-if(/luce|energia|elettric/.test(bt)){n++;out.push(`⚡ Luce: confronta le offerte sul Portale Offerte di ARERA (portaleofferte.it). Controlla se il prezzo è fisso o variabile e quando scade la promozione.`)}
-if(/gas|metano/.test(bt)){n++;out.push(`🔥 Gas: stesso confronto sul Portale Offerte ARERA; guarda anche i costi fissi mensili, non solo il prezzo al metro cubo.`)}
-if(/internet|fibra|telefon|mobile|sim/.test(bt)){n++;out.push(`📶 Internet e telefono: ogni anno confronta le tariffe dei vari operatori. Spesso i nuovi clienti pagano meno di chi è già abbonato e puoi chiedere un adeguamento.`)}
-if(/assicur|rc auto|polizza/.test(bt)){n++;out.push(`🚗 Assicurazioni: chiedi più preventivi (l'IVASS ha un preventivatore pubblico per l'RC auto) e valuta franchigie e massimali.`)}
-if(!n)out.push(`💡 Bollette: inserisci luce, gas, internet o assicurazioni tra le scadenze e ti suggerisco dove confrontare le offerte in Italia.`);
-out.push(`🛒 Livorno e dintorni: per frutta, verdura e pesce di stagione confronta i mercati cittadini (es. Mercato delle Vettovaglie) con i supermercati; i discount aiutano sui prodotti base.`);
-out.push(`🚆 Per spostarti verso Pisa o Firenze confronta treno regionale e abbonamenti con auto, carburante e parcheggio. Valuta anche di fare una sola auto in due, se possibile.`);
-out.push(`ℹ️ I consigli su Livorno e sui fornitori sono indicazioni generali, senza prezzi aggiornati: verifica sempre tariffe e offerte attuali.`);
 const av=Math.max(sum(monthExp(ym(-1))),t);
 if(sav>0&&av){const mm=sav/av;out.push(mm<3?`🛟 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Prima di investire costruisci un fondo di emergenza di 3-6 mesi su un conto deposito o remunerato, sempre disponibile.`:`📊 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Oltre al fondo di emergenza, in base a rischio e orizzonte si considerano di solito titoli di Stato (BTP/BOT), conti deposito, fondi pensione (con vantaggi fiscali) o ETF diversificati a lungo termine. Sono informazioni generali, non consulenza finanziaria: per cifre importanti rivolgiti a un consulente indipendente.`)}
 return out}
@@ -101,6 +92,14 @@ h+=`<div class=card><b>Ultimi 6 mesi</b><div style="display:flex;align-items:fle
 const big=[...ex].sort((a,b)=>b.amount-a.amount)[0],nd=per==='m'?new Date().getDate():per==='p'?new Date(new Date().getFullYear(),new Date().getMonth(),0).getDate():0;
 h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(t/ex.length)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
 return h}
+const seg=()=>`<div class=card style="padding:6px"><div class=row style="gap:6px">${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class=s style="flex:1;padding:9px;${sv===k?'background:var(--a);color:#fff':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
+function balance(){const ls=rows.filter(r=>r.type==='settle').sort((a,b)=>a.created_at<b.created_at?1:-1)[0],
+ex=of('expense').filter(r=>!ls||r.created_at>ls.created_at),S=sum(ex.filter(r=>r.who==='Simone')),V=sum(ex.filter(r=>r.who==='Valeria')),d=(S-V)/2,
+txt=Math.abs(d)<0.005?'Siete in pari ✅':d>0?`Valeria deve a Simone <b>${eur(d)}</b>`:`Simone deve a Valeria <b>${eur(-d)}</b>`;
+return `<div class=card><b>Saldo tra Simone e Valeria</b><div class=row><span>Simone ha speso</span><b>${eur(S)}</b></div><div class=row><span>Valeria ha speso</span><b>${eur(V)}</b></div><div style="font-size:18px;margin:6px 0">${txt}</div><div class=m>Conteggio dal ${ls?fd(ls.date):'inizio'}. Le spese "Comune" non contano; quelle di Simone e Valeria si dividono a metà.</div><button class=b onclick="settle(${d.toFixed(2)})">SALDO</button></div>`}
+async function settle(d){if(!confirm('Azzerare il conto e ricominciare da zero?'))return;
+const t=Math.abs(d)<0.005?'Pari':d>0?'Valeria → Simone':'Simone → Valeria';
+const{error}=await sb.from('entries').insert({type:'settle',title:t,amount:Math.abs(d),date:today()});if(error){alert('Errore: '+error.message);return}load()}
 function rec(t){const a=rows.filter(r=>r.type===t&&r.recurring);return a.length?`<h2>Ricorrenti attive</h2>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join(''):''}
 function savings(){const inc=of('income'),ex=of('expense'),T=sum(inc)-sum(ex),col=v=>v>=0?'var(--g)':'var(--r)';
 const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,12);
@@ -110,7 +109,7 @@ for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurri
 while(c&&c.date<=today()&&n++<24){const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
 const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
 return ch}
-function openForm(T,id){T=T||{spese:'expense',agenda:'appointment',scadenze:'bill',risparmi:'income'}[tab]||'expense';
+function openForm(T,id){T=T||{spese:sv==='r'?'income':'expense',agenda:'appointment',scadenze:'bill'}[tab]||'expense';
 const r=id?rows.find(x=>x.id===id):{},x=T==='appointment',b=T==='bill',i=T==='income',e=T==='expense',W=['Comune','Simone','Valeria'];
 const op=(a,v)=>a.map(o=>`<option${o===v?' selected':''}>${o}</option>`).join('');
 dlg.innerHTML=`<h3>${id?'Modifica':'Nuova'} ${{expense:'spesa',income:'entrata',appointment:'appuntamento',bill:'scadenza'}[T]}</h3>`+
