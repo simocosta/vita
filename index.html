@@ -53,7 +53,7 @@ function render(){
 const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔔 Scadenze'],['consigli','💡 Consigli']];
 let h=dueSoon().map(b=>`<div class="card warn">⚠️ ${esc(b.title)} ${eur(b.amount)} – ${days(b.date)<0?'scaduta':days(b.date)==0?'oggi':'tra '+days(b.date)+' gg'}</div>`).join('');
 if(tab==='spese'&&sv==='r')h+=seg()+savings();
-if(tab==='spese'&&sv!=='r'){h+=seg()+balance();const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
+if(tab==='spese'&&sv!=='r'){h+=seg();const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
 h+=`<div class=card><div class=m>Speso questo mese</div><h2 style="margin:0">${eur(t)}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>
 ${charts()}${rec('expense')}<h2>Spese · ${plabel()}</h2>`+
 pe('expense').slice(0,60).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')}
@@ -110,13 +110,6 @@ const big=[...ex].sort((a,b)=>b.amount-a.amount)[0],nd=(()=>{if(per==='t')return
 h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(t/ex.length)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
 return h}
 const seg=()=>`<div class=card style="padding:6px"><div class=row style="gap:6px">${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class=s style="flex:1;padding:9px;${sv===k?'background:var(--a);color:#fff':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
-function balance(){const ls=rows.filter(r=>r.type==='settle').sort((a,b)=>a.created_at<b.created_at?1:-1)[0],
-ex=of('expense').filter(r=>r.split!==false&&(!ls||r.created_at>ls.created_at)),S=sum(ex.filter(r=>r.who==='Simone')),V=sum(ex.filter(r=>r.who==='Valeria')),d=(S-V)/2,
-txt=Math.abs(d)<0.005?'Siete in pari ✅':d>0?`Valeria deve a Simone <b>${eur(d)}</b>`:`Simone deve a Valeria <b>${eur(-d)}</b>`;
-return `<div class=card><b>Saldo tra Simone e Valeria</b><div class=row><span>Simone ha speso</span><b>${eur(S)}</b></div><div class=row><span>Valeria ha speso</span><b>${eur(V)}</b></div><div style="font-size:18px;margin:6px 0">${txt}</div><div class=m>Conteggio dal ${ls?fd(ls.date):'inizio'}. Non contano le spese "Comune" e quelle senza la spunta "Conta nel saldo"; le altre si dividono a metà.</div><button class=b onclick="settle(${d.toFixed(2)})">SALDO</button></div>`}
-async function settle(d){if(!confirm('Azzerare il conto e ricominciare da zero?'))return;
-const t=Math.abs(d)<0.005?'Pari':d>0?'Valeria → Simone':'Simone → Valeria';
-const{error}=await sb.from('entries').insert({type:'settle',title:t,amount:Math.abs(d),date:today()});if(error){alert('Errore: '+error.message);return}load()}
 function rec(t){const a=rows.filter(r=>r.type===t&&r.recurring);return a.length?`<h2>Ricorrenti attive</h2>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join(''):''}
 function savings(){const inc=pe('income'),ex=pe('expense'),T=sum(inc)-sum(ex),col=v=>v>=0?'var(--g)':'var(--r)';
 const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,12);
@@ -124,7 +117,7 @@ return pbar()+`<div class=card><div class=m>Risparmio · ${plabel()} (entrate �
 async function recur(){let ch=false;
 for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){let c=r,n=0;
 while(c&&c.date<=today()&&n++<24){const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
-const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,split:c.split,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
+const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
 return ch}
 function openForm(T,id){T=T||{spese:sv==='r'?'income':'expense',scadenze:'bill'}[tab]||'expense';
 const r=id?rows.find(x=>x.id===id):{},x=T==='appointment',b=T==='bill',i=T==='income',e=T==='expense',W=['Comune','Simone','Valeria'];
@@ -133,13 +126,13 @@ dlg.innerHTML=`<h3>${id?'Modifica':'Nuova'} ${{expense:'spesa',income:'entrata',
 (i?`<div class=m>Motivazione</div><select id=f_c>${op(INC,r.category)}</select>`:`<input id=f_t placeholder=Descrizione value="${esc(r.title)}">`)+
 (x?'':`<input id=f_a type=number step=0.01 inputmode=decimal placeholder="Importo €" value="${r.amount??''}">`)+
 (e?`<select id=f_c>${op(CATS,r.category)}</select>`:'')+
-(e||i?`<div class=m>${i?'Ricevuto da':'Speso da'}</div><select id=f_w>${op(W,r.who||'Comune')}</select>`:'')+(e?`<label><input id=f_s type=checkbox style="width:auto"${r.split===false?'':' checked'}> Conta nel saldo tra Simone e Valeria</label>`:'')+
+(e||i?`<div class=m>${i?'Ricevuto da':'Speso da'}</div><select id=f_w>${op(W,r.who||'Comune')}</select>`:'')+
 (b?`<div class=m>Chi paga</div><select id=f_p>${op(W,r.payer||'Comune')}</select><label><input id=f_l type=checkbox style="width:auto"${r.alt?' checked':''}> Alterna Simone/Valeria ogni mese</label>`:'')+
 `<div class=m>Data</div><input id=f_d type=date value="${r.date||today()}">`+(x?`<input id=f_h type=time value="${r.time||''}">`:'')+
 (x?'':`<label><input id=f_r type=checkbox style="width:auto"${r.recurring?' checked':''}> Ricorrente ogni mese</label>`)+
 `<button class=b onclick="save('${T}','${id||''}')">Salva</button><button class=s onclick="dlg.close()">Annulla</button>`;dlg.showModal()}
 async function save(T,id){const g=k=>window[k]?window[k].value:null,t=T==='income'?g('f_c'):(g('f_t')||'').trim();if(!t||!f_d.value)return;
-const r={type:T,title:t,date:f_d.value,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:!!(window.f_r&&f_r.checked),split:window.f_s?f_s.checked:null};
+const r={type:T,title:t,date:f_d.value,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:!!(window.f_r&&f_r.checked)};
 const{error}=await(id?sb.from('entries').update(r).eq('id',id):sb.from('entries').insert(r));if(error){alert('Errore nel salvataggio: '+error.message);return}dlg.close();load()}
 async function del(id){if(confirm('Eliminare?')){await sb.from('entries').delete().eq('id',id);load()}}
 async function pay(id){const r=rows.find(x=>x.id===id);await sb.from('entries').update({paid:true}).eq('id',id);
