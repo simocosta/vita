@@ -15,13 +15,24 @@ input,select,button.b{width:100%;padding:11px;margin:5px 0;border-radius:10px;bo
 button.b{background:var(--a);color:#fff;border:0}button.s{border:0;background:#8882;color:var(--t);border-radius:8px;padding:6px 10px}
 .warn{background:#e5383b22;color:var(--r)}.bar{height:8px;background:#8883;border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--a)}
 dialog{border:0;border-radius:16px;width:92%;max-width:420px;background:var(--c);color:var(--t)}
+.subtabs{display:flex;gap:6px;background:#8882;border-radius:10px;padding:4px}
+.subtabs button{flex:1;border:0;background:transparent;color:var(--t);border-radius:8px;padding:9px;font-size:14px}
+.subtabs button.on{background:var(--c);font-weight:700;box-shadow:0 1px 3px #0002}
+.accordion summary{cursor:pointer;font-weight:700;list-style:none}
+.accordion summary::-webkit-details-marker{display:none}
+.accordion summary:after{content:'＋';float:right}
+.accordion[open] summary:after{content:'−'}
+.year-card{cursor:pointer}
+.year-card .arrow{font-size:22px;color:var(--m)}
+.month-block{margin:0 0 14px}.month-title{font-weight:700;margin:14px 4px 6px}
+.forecast{border-left:4px solid var(--a)}.tip{background:#2a9d4a18}
 </style></head><body><main id="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 const SB_URL='https://tabopmarqhonvzrispwz.supabase.co',SB_KEY='sb_publishable_iXFiDuQsMqW4JUj6SeScSw_QbVVJsrb';
 const sb=supabase.createClient(SB_URL,SB_KEY);
 const CATS=['Casa','Spesa','Ristoranti','Cibo asporto','Trasporti','Salute','Svago','Sport','Utenze','Abbonamenti','Altro'];
-let rows=[],tab='spese',sv='s',pf='Simone';
+let rows=[],tab='spese',sv='s',pf='Simone',profileView='expense',timeMode='m',selectedMonth=new Date().toISOString().slice(0,7),yearPage=null,forecastView='next';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -50,56 +61,92 @@ if(localStorage.ln===today())return;localStorage.ln=today();
 const r=await navigator.serviceWorker.ready;r.showNotification('Pagamenti in scadenza',{body:d.map(b=>`${b.title} ${eur(b.amount)}`).join(', ')})}
 
 function render(){
-const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔔 Scadenze'],['consigli','💡 Consigli']];
-let h=dueSoon().map(b=>`<div class="card warn">⚠️ ${esc(b.title)} ${eur(b.amount)} – ${days(b.date)<0?'scaduta':days(b.date)==0?'oggi':'tra '+days(b.date)+' gg'}</div>`).join('');
-if(tab==='spese'&&sv==='r')h+=seg()+savings();
-if(tab==='spese'&&sv!=='r'){h+=seg();const m=monthExp(ym()),t=sum(m),b=budget(),by={};m.forEach(r=>by[r.category]=(by[r.category]||0)+Number(r.amount));
-h+=`<div class=card><div class=m>Speso questo mese</div><h2 style="margin:0">${eur(t)}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>
-${charts()}${rec('expense')}<h2>Spese · ${plabel()}</h2>`+
-pe('expense').slice(0,60).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')}
-if(tab==='profili')h+=profile();
-if(tab==='scadenze'){h+='<h2>Da pagare</h2>'+(of('bill').filter(r=>!r.paid).sort((a,b)=>a.date>b.date?1:-1).map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m style="${days(r.date)<0?'color:var(--r)':''}">${fd(r.date)}${r.recurring?' · mensile':''} · paga ${esc(r.payer||'Comune')}${r.alt?' 🔁':''}</div></div><div><button class=s onclick="pay('${r.id}')">Pagata</button> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')||'<p class=m>Nulla da pagare 🎉</p>')}
-if(tab==='consigli')h+=`<h2>Suggerimenti</h2>`+advice().map(a=>`<div class=card>${a}</div>`).join('')+`<button class=b onclick=askNotif()>Attiva avvisi sul telefono</button><button class=s style="margin-top:8px" onclick="sb.auth.signOut().then(login)">Esci</button>`;
-app.innerHTML=`<div id=top></div>${h}${tab==='profili'?'':'<button class=fab onclick=openForm()>+</button>'}<nav>${tabs.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</nav>`}
+  const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔔 Scadenze e previsioni']];
+  let h='';
+  if(tab==='spese') h=seg()+(sv==='r'?savings():expenseHome());
+  if(tab==='profili') h=profile();
+  if(tab==='scadenze') h=forecastPage();
+  if(yearPage) h=yearExpenses(yearPage);
+  app.innerHTML=`<div id="top"></div>${h}${tab==='profili'||yearPage?'':'<button class=fab onclick=openForm()>+</button>'}<nav>${tabs.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';yearPage=null;render()">${l}</button>`).join('')}</nav>`;
+}
+function expenseHome(){
+  const y=String(new Date().getFullYear()),m=monthExp(ym()),t=sum(m),b=budget();
+  let h=periodSelector();
+  h+=`<div class=card><div class=m>Speso nel periodo</div><h2 style="margin:0">${eur(sum(pe('expense')))}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>`;
+  h+=charts()+rec('expense');
+  h+=`<details class="card accordion"><summary>Archivio spese ${y}</summary><div class="card year-card" onclick="yearPage=${y};render()"><div class=row><div><b>Spese ${y}</b><div class=m>${eur(sum(of('expense').filter(r=>r.date.startsWith(y+'-'))))} · visualizza tutte le spese dell'anno</div></div><span class=arrow>›</span></div></div></details>`;
+  h+=`<h2>Spese · ${plabel()}</h2>`+pe('expense').slice(0,60).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('');
+  return h;
+}
+function yearExpenses(y){
+  const all=of('expense').filter(r=>r.date.startsWith(y+'-'));
+  let h=`<div class=card><button class=s onclick="yearPage=null;render()">‹ Torna alle spese</button><h2 style="margin:4px 0">Spese ${y}</h2><div class=m>${all.length} spese · ${eur(sum(all))}</div></div>`;
+  for(let i=0;i<12;i++){
+    const key=y+'-'+String(i+1).padStart(2,'0'),a=all.filter(r=>r.date.startsWith(key));
+    if(!a.length) continue;
+    h+=`<div class=month-block><div class=month-title>${new Date(y,i,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'})} · ${eur(sum(a))}</div>`;
+    h+=a.map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button><button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('');
+    h+='</div>';
+  }
+  return h||`<div class=card>Nessuna spesa nel ${y}.</div>`;
+}
+function periodSelector(){
+  const d=new Date(selectedMonth+'-01T12:00'),label=d.toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+  return `<div class=card><div class=subtabs>${[['w','Settimana'],['m','Mese'],['y','Anno']].map(([k,l])=>`<button class="${timeMode===k?'on':''}" onclick="timeMode='${k}';per='${k}';render()">${l}</button>`).join('')}</div>
+  ${timeMode==='m'?`<div class=row style="margin-top:6px"><button class=s onclick="stepSelected(-1)">‹</button><b>${label}</b><button class=s onclick="stepSelected(1)">›</button></div>`:''}
+  ${timeMode==='y'?`<div class=row style="margin-top:6px"><button class=s onclick="stepSelected(-1)">‹</button><b>${d.getFullYear()}</b><button class=s onclick="stepSelected(1)">›</button></div>`:''}
+  ${timeMode==='w'?`<div class=m style="text-align:center;margin-top:6px">${plabel()}</div>`:''}</div>`;
+}
+function stepSelected(delta){
+  const d=new Date(selectedMonth+'-01T12:00');
+  if(timeMode==='m') d.setMonth(d.getMonth()+delta); else d.setFullYear(d.getFullYear()+delta);
+  selectedMonth=iso(d).slice(0,7); render();
+}
 
-function advice(){const out=[],m=monthExp(ym()),p=monthExp(ym(-1)),t=sum(m),pt=sum(p),b=budget(),now=new Date();
-const left=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate();
-if(pt&&t>pt*(now.getDate()/30)*1.3)out.push(`📈 Stai spendendo più del mese scorso (${eur(t)} contro ${eur(pt)} totali).`);
-const cs=a=>a.reduce((o,r)=>(o[r.category]=(o[r.category]||0)+Number(r.amount),o),{}),c1=cs(m),c0=cs(p);
-Object.keys(c1).forEach(k=>{if(c0[k]>50&&c1[k]>c0[k]*1.3)out.push(`⚠️ ${k}: già ${eur(c1[k])} (mese scorso ${eur(c0[k])}).`)});
-if(b){const r=b-t;out.push(r>=0?`✅ Restano ${eur(r)} di budget: circa ${eur(r/Math.max(left,1))} al giorno.`:`🚨 Budget superato di ${eur(-r)}.`)}else out.push('Imposta un budget mensile per avere consigli più precisi.');
-const soon=of('bill').filter(x=>!x.paid&&days(x.date)<=7&&days(x.date)>=0);if(soon.length)out.push(`🔔 Nei prossimi 7 giorni devi pagare ${eur(sum(soon))}: tieni da parte la cifra.`);
-const top=Object.entries(c1).sort((a,b)=>b[1]-a[1])[0];if(top)out.push(`🏷️ Categoria più cara: ${top[0]} (${eur(top[1])}).`);
-const inc=of('income'),mi=sum(inc.filter(r=>r.date.startsWith(ym()))),sav=sum(inc)-sum(of('expense'));
-if(mi){const q=(mi-t)/mi;out.push(q<0?`🚨 Questo mese le spese (${eur(t)}) superano le entrate (${eur(mi)}).`:q<.1?`⚠️ Stai risparmiando solo il ${Math.round(q*100)}% delle entrate del mese: valuta di ridurre le categorie più alte.`:`✅ Questo mese stai risparmiando il ${Math.round(q*100)}% delle entrate (${eur(mi-t)}).`)}else out.push('Inserisci le entrate del mese (scheda Risparmi) per avere consigli sul risparmio.');
-const av=Math.max(sum(monthExp(ym(-1))),t);
-if(sav>0&&av){const mm=sav/av;out.push(mm<3?`🛟 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Prima di investire costruisci un fondo di emergenza di 3-6 mesi su un conto deposito o remunerato, sempre disponibile.`:`📊 I risparmi coprono circa ${mm.toFixed(1)} mesi di spese. Oltre al fondo di emergenza, in base a rischio e orizzonte si considerano di solito titoli di Stato (BTP/BOT), conti deposito, fondi pensione (con vantaggi fiscali) o ETF diversificati a lungo termine. Sono informazioni generali, non consulenza finanziaria: per cifre importanti rivolgiti a un consulente indipendente.`)}
-return out}
+function advice(){
+  const out=[],m=monthExp(ym()),p=monthExp(ym(-1)),t=sum(m),pt=sum(p),b=budget(),now=new Date();
+  if(pt&&t>pt*(now.getDate()/30)*1.3)out.push(`Stai spendendo più del mese scorso (${eur(t)} contro ${eur(pt)} totali).`);
+  if(b){const left=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate(),r=b-t;out.push(r>=0?`Restano ${eur(r)} di budget: circa ${eur(r/Math.max(left,1))} al giorno.`:`Budget superato di ${eur(-r)}.`)}
+  return out;
+}
 
 const COL=['#0a84ff','#2a9d4a','#ff9f0a','#e5383b','#bf5af2','#64d2ff','#ff375f','#8e8e93','#ffd60a','#30d158','#5e5ce6','#ac8e68'];let per='m',cu={y:new Date().getFullYear(),m:new Date().getMonth()};
-const PL={w:'Questa settimana',m:'Questo mese',y:'Questo anno',p:'Scorso mese',n:'Prossimo mese',t:'Tutto il periodo'};
-function range(){const n=new Date(),Y=n.getFullYear(),M=n.getMonth(),D=n.getDate(),f=(y,m,d)=>iso(new Date(y,m,d,12));
-if(per==='w'){const k=(n.getDay()+6)%7;return[f(Y,M,D-k),f(Y,M,D-k+6)]}
-if(per==='m')return[f(Y,M,1),f(Y,M+1,0)];if(per==='y')return[f(Y,0,1),f(Y,11,31)];
-if(per==='p')return[f(Y,M-1,1),f(Y,M,0)];if(per==='n')return[f(Y,M+1,1),f(Y,M+2,0)];
-if(per==='cm')return[f(cu.y,cu.m,1),f(cu.y,cu.m+1,0)];if(per==='cy')return[f(cu.y,0,1),f(cu.y,11,31)];
-return['0000-01-01','9999-12-31']}
-const inPer=r=>{const[a,b]=range();return r.date>=a&&r.date<=b};
+const PL={w:'Questa settimana',m:'Questo mese',y:'Questo anno'};
+function range(){
+  const n=new Date(),Y=n.getFullYear(),M=n.getMonth(),D=n.getDate(),f=(y,m,d)=>iso(new Date(y,m,d,12));
+  if(per==='w'){const k=(n.getDay()+6)%7;return[f(Y,M,D-k),f(Y,M,D-k+6)]}
+  if(per==='m'){const d=new Date(selectedMonth+'-01T12:00');return[iso(d),iso(new Date(d.getFullYear(),d.getMonth()+1,0,12))]}
+  if(per==='y'){const y=Number(selectedMonth.slice(0,4));return[f(y,0,1),f(y,11,31)]}
+  return['0000-01-01','9999-12-31'];
+}
+const inPer=r=>r.date>=range()[0]&&r.date<=range()[1];
 const pe=t=>rows.filter(r=>r.type===t&&inPer(r)&&(r.date<=today()||range()[0]>today()));
-const plabel=()=>(per==='cm'?new Date(cu.y,cu.m,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'}):per==='cy'?String(cu.y):PL[per])+(range()[0]>today()?' (previsione)':'');
-function stepCu(d){if(per==='cm'){cu.m+=d;if(cu.m>11){cu.m=0;cu.y++}if(cu.m<0){cu.m=11;cu.y--}}else cu.y+=d;render()}
-const pbar=()=>`<div class=card><div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px">${['w','m','y','p','n','t'].map(k=>`<button class=s style="white-space:nowrap;${per===k?'background:var(--a);color:#fff':''}" onclick="per='${k}';render()">${PL[k]}</button>`).join('')}</div><div class=row style="gap:6px;margin-top:4px">${[['cm','Mese specifico'],['cy','Anno specifico']].map(([k,l])=>`<button class=s style="flex:1;${per===k?'background:var(--a);color:#fff':''}" onclick="per='${k}';render()">${l}</button>`).join('')}</div>${per==='cm'||per==='cy'?`<div class=row><button class=s onclick="stepCu(-1)">‹</button><b>${plabel()}</b><button class=s onclick="stepCu(1)">›</button></div>`:`<div class=m style="text-align:center;margin-top:4px">${plabel()}</div>`}</div>`;
-function profile(){const P=pf,w=r=>(r.who||'Comune')===P,col=v=>v>=0?'var(--g)':'var(--r)',ex=of('expense').filter(w),inc=of('income').filter(w),e1=sum(pe('expense').filter(w)),i1=sum(pe('income').filter(w)),T=sum(inc)-sum(ex);
-const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,6);
-return `<div class=card><div class=row style="gap:6px">${['Simone','Valeria'].map(k=>`<button class=s style="flex:1;padding:9px;${pf===k?'background:var(--a);color:#fff':''}" onclick="pf='${k}';render()">${k}</button>`).join('')}</div></div>`+pbar()+
-`<div class=card><b>Riepilogo ${P} · ${plabel()}</b><div class=row><span>Spese</span><b>${eur(e1)}</b></div><div class=row><span>Entrate</span><b>${eur(i1)}</b></div><div class=row><span>Risparmio del periodo</span><b style="color:${col(i1-e1)}">${eur(i1-e1)}</b></div><div class=row><span>Risparmio totale</span><b style="color:${col(T)}">${eur(T)}</b></div><div class=m>Solo voci intestate a ${P}: quelle "Comune" non sono incluse.</div></div>`+charts(P)+
-`<div class=card><b>Risparmio mese per mese</b>`+(ms.map(m=>{const a=sum(inc.filter(r=>r.date.startsWith(m))),b=sum(ex.filter(r=>r.date.startsWith(m)));return `<div class=row><span>${m.slice(5)}/${m.slice(0,4)}</span><span class=m>+${eur(a)} −${eur(b)}</span><b style="color:${col(a-b)}">${eur(a-b)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>')+`</div>`}
+const plabel=()=>timeMode==='m'?new Date(selectedMonth+'-01T12:00').toLocaleDateString('it-IT',{month:'long',year:'numeric'}):timeMode==='y'?selectedMonth.slice(0,4):PL.w;
+function profile(){
+  const P=pf,w=r=>(r.who||'Comune')===P, common=r=>(r.who||'Comune')==='Comune';
+  const exMine=pe('expense').filter(w),exCommon=pe('expense').filter(common),inc=pe('income').filter(w);
+  const personalExpense=sum(exMine),commonShare=sum(exCommon)/2,totalExpense=personalExpense+commonShare,saving=sum(inc)-totalExpense;
+  const allMine=of('expense').filter(w),allCommon=of('expense').filter(common),allInc=of('income').filter(w);
+  const totalSaving=sum(allInc)-sum(allMine)-sum(allCommon)/2,col=v=>v>=0?'var(--g)':'var(--r)';
+  let h=`<div class=card><div class=subtabs>${['Simone','Valeria'].map(k=>`<button class="${pf===k?'on':''}" onclick="pf='${k}';render()">${k}</button>`).join('')}</div></div>`;
+  h+=periodSelector()+`<div class=card><div class=subtabs>${[['expense','Spese'],['saving','Risparmi']].map(([k,l])=>`<button class="${profileView===k?'on':''}" onclick="profileView='${k}';render()">${l}</button>`).join('')}</div></div>`;
+  if(profileView==='expense'){
+    h+=`<div class=card><b>Spese di ${P} · ${plabel()}</b><div class=row><span>Spese personali</span><b>${eur(personalExpense)}</b></div><div class=row><span>Spese comuni</span><b>${eur(commonShare)}</b></div><div class=m>Quota personale = Spese comuni totali ÷ 2.</div><div class=row><span>Totale spese</span><b>${eur(totalExpense)}</b></div></div>${charts(P)}`;
+  }else{
+    h+=`<div class=card><div class=m>Risparmio di ${P} · ${plabel()}</div><h2 style="margin:0;color:${col(saving)}">${eur(saving)}</h2><div class=m>Entrate ${eur(sum(inc))} · Spese ${eur(totalExpense)}</div></div><div class=card><b>Risparmio mese per mese</b>${profileMonths(P)}</div><div class=card><b>Risparmio totale</b><h2 style="margin:4px 0;color:${col(totalSaving)}">${eur(totalSaving)}</h2><div class=m>Entrate personali − spese personali − metà delle spese comuni.</div></div>`;
+  }
+  return h;
+}
+function profileMonths(P){
+  const months=[...new Set([...of('expense'),...of('income')].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,12);
+  return months.map(m=>{const i=sum(of('income').filter(r=>r.who===P&&r.date.startsWith(m))),o=sum(of('expense').filter(r=>r.who===P&&r.date.startsWith(m))),c=sum(of('expense').filter(r=>(r.who||'Comune')==='Comune'&&r.date.startsWith(m)))/2;return `<div class=row><span>${new Date(m+'-01T12:00').toLocaleDateString('it-IT',{month:'short',year:'numeric'})}</span><span class=m>+${eur(i)} · −${eur(o+c)}</span><b>${eur(i-o-c)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>';
+}
 function charts(P){
 
 const ex=pe('expense').filter(r=>!P||(r.who||'Comune')===P),t=sum(ex);
 const grp=(k,d)=>Object.entries(ex.reduce((o,r)=>{const x=r[k]||d;o[x]=(o[x]||0)+Number(r.amount);return o},{})).sort((a,b)=>b[1]-a[1]);
 const cats=grp('category','Altro'),whos=grp('who','Comune');
-let h=P?'':pbar();
+let h='';
 if(!t)return h+'<div class=card><span class=m>Nessuna spesa nel periodo</span></div>';
 let off=0;const donut=cats.map(([k,v],i)=>{const l=v/t*251.33,c=`<circle r=40 cx=60 cy=60 fill=none stroke="${COL[i%COL.length]}" stroke-width=20 stroke-dasharray="${l} ${251.33-l}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`;off+=l;return c}).join('');
 h+=`<div class=card><b>Per categoria</b><div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 120 120" width=130 height=130>${donut}<text x=60 y=64 text-anchor=middle font-size=12 fill=currentColor>${eur(t)}</text></svg><div style="flex:1">${cats.map(([k,v],i)=>`<div class=row style="padding:2px 0"><span><span style="color:${COL[i%COL.length]}">●</span> ${esc(k)}</span><span class=m>${Math.round(v/t*100)}% · ${eur(v)}</span></div>`).join('')}</div></div></div>`;
@@ -107,13 +154,37 @@ if(!P)h+=`<div class=card><b>Per persona</b>${whos.map(([k,v])=>`<div style="mar
 const ys=per==='cy'?cu.y:per==='y'?new Date().getFullYear():0,mo=(ys?[...Array(12)].map((_,i)=>ys+'-'+String(i+1).padStart(2,'0')):[-5,-4,-3,-2,-1,0].map(o=>ym(o))).map(k=>{return[k.slice(5)+'/'+k.slice(2,4),sum(of('expense').filter(r=>r.date.startsWith(k)&&(!P||(r.who||'Comune')===P)))]}),mx=Math.max(...mo.map(x=>x[1]),1);
 h+=`<div class=card><b>${ys?'Mesi del '+ys:'Ultimi 6 mesi'}</b><div style="display:flex;align-items:flex-end;gap:8px;height:120px;margin-top:8px">${mo.map(([k,v])=>`<div style="flex:1;text-align:center"><div class=m style="font-size:10px">${Math.round(v)}</div><div style="background:var(--a);height:${v/mx*80}px;border-radius:4px 4px 0 0"></div><div class=m style="font-size:11px">${k}</div></div>`).join('')}</div></div>`;
 const big=[...ex].sort((a,b)=>b.amount-a.amount)[0],nd=(()=>{if(per==='t')return 0;const[a,b]=range(),e=a>today()||b<today()?b:today();return Math.round((new Date(e+'T12:00')-new Date(a+'T12:00'))/864e5)+1})();
-h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(t/ex.length)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
+h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(ex.length?t/ex.length:0)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
 return h}
-const seg=()=>`<div class=card style="padding:6px"><div class=row style="gap:6px">${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class=s style="flex:1;padding:9px;${sv===k?'background:var(--a);color:#fff':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
-function rec(t){const a=rows.filter(r=>r.type===t&&r.recurring);return a.length?`<h2>Ricorrenti attive</h2>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join(''):''}
-function savings(){const inc=pe('income'),ex=pe('expense'),T=sum(inc)-sum(ex),col=v=>v>=0?'var(--g)':'var(--r)';
-const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,12);
-return pbar()+`<div class=card><div class=m>Risparmio · ${plabel()} (entrate − spese)</div><h2 style="margin:0;color:${col(T)}">${eur(T)}</h2><div class=m>Entrate ${eur(sum(inc))} · Spese ${eur(sum(ex))}</div></div><div class=card><b>Mese per mese</b>`+(ms.map(m=>{const a=sum(inc.filter(r=>r.date.startsWith(m))),b=sum(ex.filter(r=>r.date.startsWith(m)));return `<div class=row><span>${m.slice(5)}/${m.slice(0,4)}</span><span class=m>+${eur(a)} −${eur(b)}</span><b style="color:${col(a-b)}">${eur(a-b)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>')+`</div>`+rec('income')+'<h2>Ultime entrate</h2>'+inc.slice(0,30).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('income','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')}
+const seg=()=>`<div class=card style="padding:6px"><div class=subtabs>${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class="${sv===k?'on':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
+function rec(t){
+  const a=rows.filter(r=>r.type===t&&r.recurring);if(!a.length)return '';
+  return `<details class="card accordion"><summary>${t==='expense'?'Spese ricorrenti attive':'Entrate ricorrenti attive'} · ${a.length}</summary>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button><button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')+'</details>';
+}
+function savings(){
+  const inc=pe('income'),ex=pe('expense'),T=sum(inc)-sum(ex),col=v=>v>=0?'var(--g)':'var(--r)';
+  const ms=[...new Set([...inc,...ex].map(r=>r.date.slice(0,7)))].sort().reverse().slice(0,12);
+  return periodSelector()+`<div class=card><div class=m>Risparmio · ${plabel()} (entrate − spese)</div><h2 style="margin:0;color:${col(T)}">${eur(T)}</h2><div class=m>Entrate ${eur(sum(inc))} · Spese ${eur(sum(ex))}</div></div><div class=card><b>Mese per mese</b>`+(ms.map(m=>{const a=sum(inc.filter(r=>r.date.startsWith(m))),b=sum(ex.filter(r=>r.date.startsWith(m)));return `<div class=row><span>${m.slice(5)}/${m.slice(0,4)}</span><span class=m>+${eur(a)} −${eur(b)}</span><b>${eur(a-b)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>')+`</div>`+rec('income')+`<details class="card accordion"><summary>Tutte le entrate del periodo</summary>`+inc.slice(0,60).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('income','${r.id}')">✎</button><button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')+`</details>`;
+}
+function forecastPage(){
+  const views=[['next','Prossimo mese'],['current','Anno in corso'],['nextYear','Prossimo anno']],active=forecastView;
+  let h=`<div class=card><div class=subtabs>${views.map(([k,l])=>`<button class="${active===k?'on':''}" onclick="forecastView='${k}';render()">${l}</button>`).join('')}</div></div>`;
+  const base=new Date(),months=[];
+  if(active==='next')months.push(new Date(base.getFullYear(),base.getMonth()+1,1));
+  if(active==='current')for(let i=0;i<12;i++)months.push(new Date(base.getFullYear(),i,1));
+  if(active==='nextYear')for(let i=0;i<12;i++)months.push(new Date(base.getFullYear()+1,i,1));
+  months.forEach(d=>h+=forecastMonth(d));return h;
+}
+function forecastMonth(d){
+  const key=iso(d).slice(0,7),re=rows.filter(r=>r.type==='expense'&&r.recurring),ri=rows.filter(r=>r.type==='income'&&r.recurring),bills=rows.filter(r=>r.type==='bill'&&r.date.startsWith(key)&&!r.paid);
+  const e=sum(re),i=sum(ri),b=sum(bills),balance=i-e-b,tips=[];
+  if(e||b)tips.push(`Previsione spese: ${eur(e+b)} (${eur(e)} ricorrenti + ${eur(b)} di scadenze).`);
+  if(balance<0)tips.push(`Le entrate ricorrenti previste non coprono le uscite: mancano circa ${eur(-balance)}.`);
+  else if(i)tips.push(`Dopo le uscite ricorrenti e le scadenze resterebbero circa ${eur(balance)} prima delle altre spese.`);
+  if(bills.length)tips.push(`Hai ${bills.length} scadenze da considerare per ${eur(b)}.`);
+  if(!tips.length)tips.push('Nessuna previsione disponibile: aggiungi spese o entrate ricorrenti.');
+  return `<div class="card forecast"><b>${d.toLocaleDateString('it-IT',{month:'long',year:'numeric'})}</b><div class=row><span>Spese ricorrenti</span><b>${eur(e)}</b></div><div class=row><span>Scadenze</span><b>${eur(b)}</b></div><div class=row><span>Entrate ricorrenti</span><b>${eur(i)}</b></div><div class=row><span>Saldo previsto</span><b style="color:${balance>=0?'var(--g)':'var(--r)'}">${eur(balance)}</b></div><div class="card tip">${tips.map(x=>`<div>💡 ${x}</div>`).join('')}</div></div>`;
+}
 async function recur(){let ch=false;
 for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){let c=r,n=0;
 while(c&&c.date<=today()&&n++<24){const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
