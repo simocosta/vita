@@ -61,7 +61,7 @@ if(localStorage.ln===today())return;localStorage.ln=today();
 const r=await navigator.serviceWorker.ready;r.showNotification('Pagamenti in scadenza',{body:d.map(b=>`${b.title} ${eur(b.amount)}`).join(', ')})}
 
 function render(){
-  const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔔 Scadenze e previsioni']];
+  const tabs=[['spese','💶 Spese'],['profili','👤 Profili'],['scadenze','🔮 Previsioni']];
   let h='';
   if(tab==='spese') h=seg()+(sv==='r'?savings():expenseHome());
   if(tab==='profili') h=profile();
@@ -75,7 +75,6 @@ function expenseHome(){
   h+=`<div class=card><div class=m>Speso nel periodo</div><h2 style="margin:0">${eur(sum(pe('expense')))}</h2>${b?`<div class=bar><i style="width:${Math.min(100,t/b*100)}%"></i></div><div class=m>Budget ${eur(b)} · restano ${eur(b-t)}</div>`:''}<button class=s onclick=setBudget()>Imposta budget</button></div>`;
   h+=charts()+rec('expense');
   h+=`<details class="card accordion"><summary>Archivio spese ${y}</summary><div class="card year-card" onclick="yearPage=${y};render()"><div class=row><div><b>Spese ${y}</b><div class=m>${eur(sum(of('expense').filter(r=>r.date.startsWith(y+'-'))))} · visualizza tutte le spese dell'anno</div></div><span class=arrow>›</span></div></div></details>`;
-  h+=`<h2>Spese · ${plabel()}</h2>`+pe('expense').slice(0,60).map(r=>`<div class=card><div class=row><div>${esc(r.title)}<div class=m>${fd(r.date)} · ${esc(r.category)} · ${esc(r.who||'Comune')}${r.recurring?' · 🔁':''}</div></div><div><b>${eur(r.amount)}</b> <button class=s onclick="openForm('${r.type}','${r.id}')">✎</button> <button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('');
   return h;
 }
 function yearExpenses(y){
@@ -171,19 +170,50 @@ function forecastPage(){
   let h=`<div class=card><div class=subtabs>${views.map(([k,l])=>`<button class="${active===k?'on':''}" onclick="forecastView='${k}';render()">${l}</button>`).join('')}</div></div>`;
   const base=new Date(),months=[];
   if(active==='next')months.push(new Date(base.getFullYear(),base.getMonth()+1,1));
-  if(active==='current')for(let i=0;i<12;i++)months.push(new Date(base.getFullYear(),i,1));
+  if(active==='current')for(let i=base.getMonth();i<12;i++)months.push(new Date(base.getFullYear(),i,1));
   if(active==='nextYear')for(let i=0;i<12;i++)months.push(new Date(base.getFullYear()+1,i,1));
-  months.forEach(d=>h+=forecastMonth(d));return h;
+  months.forEach(d=>h+=forecastMonth(d));
+  return h;
+}
+function historicalMonthly(type, key, excludeRecurring=true){
+  const arr=rows.filter(r=>r.type===type && r.date<key+'-01' && (!excludeRecurring || !r.recurring));
+  const by={};arr.forEach(r=>{const m=r.date.slice(0,7);by[m]=(by[m]||0)+Number(r.amount||0)});
+  return by;
+}
+function forecastValue(type,d){
+  const key=iso(d).slice(0,7), year=d.getFullYear(), month=d.getMonth()+1;
+  const recurring=sum([...new Map(rows.filter(r=>r.type===type&&r.recurring).sort((a,b)=>a.date>b.date?-1:1).map(r=>[r.title,r])).values()].map(r=>({amount:r.amount||0})));
+  const hist=historicalMonthly(type,key,true), vals=Object.values(hist), avg=vals.length?sum(vals.map(v=>({amount:v}))) / vals.length:0;
+  const recentMonths=Object.keys(hist).sort().slice(-6), recent=recentMonths.map(k=>hist[k]), recentAvg=recent.length?recent.reduce((a,b)=>a+b,0)/recent.length:avg;
+  const prevKey=iso(new Date(year,month-2,1,12)).slice(0,7),prev=hist[prevKey]||0;
+  const priorYearKey=iso(new Date(year-1,month-1,1,12)).slice(0,7),priorYear=hist[priorYearKey]||0;
+  const seasonal=priorYear>0&&recentAvg>0?(priorYear*0.5+recentAvg*0.3+avg*0.2):(prev>0&&recentAvg>0?(prev*0.35+recentAvg*0.45+avg*0.2):(recentAvg||avg));
+  return {recurring,variable:seasonal,total:recurring+seasonal,prev,priorYear,avg,recentAvg};
+}
+function unpaidBillsForMonth(key){return sum(rows.filter(r=>r.type==='bill'&&r.date.startsWith(key)&&!r.paid));}
+function forecastTips(d,e,i,totalOut,totalIn){
+  const key=iso(d).slice(0,7),month=d.getMonth(),tips=[];
+  const prev=forecastValue('expense',new Date(d.getFullYear(),d.getMonth(),1));
+  if(prev.priorYear>0 && Math.abs(prev.priorYear-prev.recentAvg)>prev.recentAvg*0.15){
+    tips.push(prev.priorYear>prev.recentAvg?`Nello stesso mese dell'anno scorso hai speso circa ${eur(prev.priorYear)}: valuta di prevedere un margine extra.`:`Lo stesso mese dell'anno scorso era più leggero: potresti avere spazio per contenere le uscite.`);
+  }
+  const categoryTotals={};
+  rows.filter(r=>r.type==='expense'&&!r.recurring&&r.date.startsWith(key)).forEach(r=>categoryTotals[r.category||'Altro']=(categoryTotals[r.category||'Altro']||0)+Number(r.amount||0));
+  const top=Object.entries(categoryTotals).sort((a,b)=>b[1]-a[1])[0];
+  if(top)tips.push(`La categoria più pesante in questo periodo è ${top[0]}: controllala quando pianifichi le uscite.`);
+  const seasonal=rows.filter(r=>r.type==='expense'&&!r.recurring&&['Casa','Utenze'].includes(r.category||'')&&[11,0,1].includes(month));
+  if(seasonal.length)tips.push('Nei mesi invernali hai spese di Casa/Utenze: considera un margine per riscaldamento e consumi.');
+  const bills=unpaidBillsForMonth(key);
+  if(bills)tips.push(`Sono presenti scadenze per ${eur(bills)}: tienile separate dal budget delle spese ordinarie.`);
+  if(totalOut>totalIn)tips.push(`Le uscite previste superano le entrate di circa ${eur(totalOut-totalIn)}: valuta in anticipo quali spese non necessarie rimandare.`);
+  else if(totalIn>0&&totalOut<totalIn*0.8)tips.push(`La previsione lascia un buon margine: circa ${eur(totalIn-totalOut)} prima di eventuali spese impreviste.`);
+  if(!tips.length)tips.push('La previsione combina storico, andamento recente, ricorrenze e stagionalità quando i dati disponibili lo consentono.');
+  return tips.slice(0,3);
 }
 function forecastMonth(d){
-  const key=iso(d).slice(0,7),re=rows.filter(r=>r.type==='expense'&&r.recurring),ri=rows.filter(r=>r.type==='income'&&r.recurring),bills=rows.filter(r=>r.type==='bill'&&r.date.startsWith(key)&&!r.paid);
-  const e=sum(re),i=sum(ri),b=sum(bills),balance=i-e-b,tips=[];
-  if(e||b)tips.push(`Previsione spese: ${eur(e+b)} (${eur(e)} ricorrenti + ${eur(b)} di scadenze).`);
-  if(balance<0)tips.push(`Le entrate ricorrenti previste non coprono le uscite: mancano circa ${eur(-balance)}.`);
-  else if(i)tips.push(`Dopo le uscite ricorrenti e le scadenze resterebbero circa ${eur(balance)} prima delle altre spese.`);
-  if(bills.length)tips.push(`Hai ${bills.length} scadenze da considerare per ${eur(b)}.`);
-  if(!tips.length)tips.push('Nessuna previsione disponibile: aggiungi spese o entrate ricorrenti.');
-  return `<div class="card forecast"><b>${d.toLocaleDateString('it-IT',{month:'long',year:'numeric'})}</b><div class=row><span>Spese ricorrenti</span><b>${eur(e)}</b></div><div class=row><span>Scadenze</span><b>${eur(b)}</b></div><div class=row><span>Entrate ricorrenti</span><b>${eur(i)}</b></div><div class=row><span>Saldo previsto</span><b style="color:${balance>=0?'var(--g)':'var(--r)'}">${eur(balance)}</b></div><div class="card tip">${tips.map(x=>`<div>💡 ${x}</div>`).join('')}</div></div>`;
+  const key=iso(d).slice(0,7), e=forecastValue('expense',d), i=forecastValue('income',d), bills=unpaidBillsForMonth(key);
+  const totalOut=e.total+bills, totalIn=i.total, saving=totalIn-totalOut, tips=forecastTips(d,e,i,totalOut,totalIn);
+  return `<div class="card forecast"><h3 style="margin:2px 0 10px">${d.toLocaleDateString('it-IT',{month:'long',year:'numeric'})}</h3><div class=row><span>Uscite previste</span><b>${eur(totalOut)}</b></div><div class=row><span>Entrate previste</span><b>${eur(totalIn)}</b></div><div class=row><span>Risparmio previsto</span><b style="color:${saving>=0?'var(--g)':'var(--r)'}">${eur(saving)}</b></div><div class="card tip"><b>Per te</b>${tips.map(x=>`<div style="margin-top:7px">💡 ${x}</div>`).join('')}</div></div>`;
 }
 async function recur(){let ch=false;
 for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){let c=r,n=0;
