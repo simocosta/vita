@@ -37,7 +37,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
 const today=()=>iso(new Date());
-const fd=s=>s?new Date(s+'T12:00').toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'}):'';
+const fd=s=>new Date(s+'T12:00').toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
 const days=s=>Math.round((new Date(s+'T12:00')-new Date(today()+'T12:00'))/864e5);
 const ym=(o=0)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()+o);return iso(d).slice(0,7)};
 const of=t=>rows.filter(r=>r.type===t&&((t!=='expense'&&t!=='income')||r.date<=today()));
@@ -47,34 +47,13 @@ const sum=a=>a.reduce((s,r)=>s+Number(r.amount||0),0);
 const monthExp=m=>of('expense').filter(r=>r.date.startsWith(m));
 const budget=()=>Number(of('budget').sort((a,b)=>b.created_at>a.created_at?1:-1)[0]?.amount||0);
 
-async function init(){
-  try {
-    const{data}=await sb.auth.getSession();
-    data && data.session ? start() : login();
-  } catch(err) {
-    login('Errore di connessione');
-  }
-}
-
+async function init(){const{data}=await sb.auth.getSession();data.session?start():login()}
 function login(msg=''){app.innerHTML=`<h2>Casa 🏠</h2><div class=card><input id=e type=email placeholder=Email autocomplete=username><input id=p type=password placeholder=Password autocomplete=current-password><button class=b onclick=doLogin()>Accedi</button><p class=m>${msg}</p></div>`}
 async function doLogin(){const{error}=await sb.auth.signInWithPassword({email:e.value.trim().toLowerCase(),password:p.value});error?login('Errore: '+error.message):start()}
 async function start(){await load();sb.channel('e').on('postgres_changes',{event:'*',schema:'public',table:'entries'},load).subscribe();
 document.addEventListener('visibilitychange',()=>!document.hidden&&load());
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js')}
-
-async function load(){
-  try {
-    const{data, error}=await sb.from('entries').select('*').order('date',{ascending:false});
-    if(error) console.error(error);
-    rows=data||[];
-    if(await recur()) return load();
-    render();
-    push();
-  } catch(e) {
-    console.error(e);
-    render();
-  }
-}
+async function load(){const{data}=await sb.from('entries').select('*').order('date',{ascending:false});rows=data||[];if(await recur())return load();render();push()}
 
 function dueSoon(){return of('bill').filter(b=>!b.paid&&days(b.date)<=3).sort((a,b)=>a.date>b.date?1:-1)}
 async function push(){const d=dueSoon();if(!d.length||!('Notification'in window)||Notification.permission!=='granted')return;
@@ -162,23 +141,24 @@ function profileMonths(P){
   return months.map(m=>{const i=sum(of('income').filter(r=>r.who===P&&r.date.startsWith(m))),o=sum(of('expense').filter(r=>r.who===P&&r.date.startsWith(m))),c=sum(of('expense').filter(r=>(r.who||'Comune')==='Comune'&&r.date.startsWith(m)))/2;return `<div class=row><span>${new Date(m+'-01T12:00').toLocaleDateString('it-IT',{month:'short',year:'numeric'})}</span><span class=m>+${eur(i)} · −${eur(o+c)}</span><b>${eur(i-o-c)}</b></div>`}).join('')||'<span class=m>Nessun dato</span>';
 }
 function charts(P){
+
 const ex=pe('expense').filter(r=>!P||(r.who||'Comune')===P),t=sum(ex);
 const grp=(k,d)=>Object.entries(ex.reduce((o,r)=>{const x=r[k]||d;o[x]=(o[x]||0)+Number(r.amount);return o},{})).sort((a,b)=>b[1]-a[1]);
 const cats=grp('category','Altro'),whos=grp('who','Comune');
 let h='';
 if(!t)return h+'<div class=card><span class=m>Nessuna spesa nel periodo</span></div>';
 let off=0;const donut=cats.map(([k,v],i)=>{const l=v/t*251.33,c=`<circle r=40 cx=60 cy=60 fill=none stroke="${COL[i%COL.length]}" stroke-width=20 stroke-dasharray="${l} ${251.33-l}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`;off+=l;return c}).join('');
-h+=`<div class=card><b>Per categoria</b><div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 120 120" width=130 height=130>${donut}<text x=60 y=64 text-anchor=middle font-size=12 fill=currentColor>${eur(t)}</text></svg><div style="flex:1">${cats.map(([k,v],i)=>`<div class=row style="padding:2px 0"><span><span style="color:${COL[i\%COL.length]}">●</span> ${esc(k)}</span><span class=m>${Math.round(v/t*100)}\% ·${eur(v)}</span></div>`).join('')}</div></div></div>`;
+h+=`<div class=card><b>Per categoria</b><div style="display:flex;align-items:center;gap:12px"><svg viewBox="0 0 120 120" width=130 height=130>${donut}<text x=60 y=64 text-anchor=middle font-size=12 fill=currentColor>${eur(t)}</text></svg><div style="flex:1">${cats.map(([k,v],i)=>`<div class=row style="padding:2px 0"><span><span style="color:${COL[i%COL.length]}">●</span> ${esc(k)}</span><span class=m>${Math.round(v/t*100)}% · ${eur(v)}</span></div>`).join('')}</div></div></div>`;
 if(!P)h+=`<div class=card><b>Per persona</b>${whos.map(([k,v])=>`<div style="margin:8px 0"><div class=row style="padding:0"><span>${esc(k)}</span><span>${eur(v)} <span class=m>(${Math.round(v/t*100)}%)</span></span></div><div class=bar><i style="width:${v/t*100}%"></i></div></div>`).join('')}</div>`;
 const ys=per==='cy'?cu.y:per==='y'?new Date().getFullYear():0,mo=(ys?[...Array(12)].map((_,i)=>ys+'-'+String(i+1).padStart(2,'0')):[-5,-4,-3,-2,-1,0].map(o=>ym(o))).map(k=>{return[k.slice(5)+'/'+k.slice(2,4),sum(of('expense').filter(r=>r.date.startsWith(k)&&(!P||(r.who||'Comune')===P)))]}),mx=Math.max(...mo.map(x=>x[1]),1);
 h+=`<div class=card><b>${ys?'Mesi del '+ys:'Ultimi 6 mesi'}</b><div style="display:flex;align-items:flex-end;gap:8px;height:120px;margin-top:8px">${mo.map(([k,v])=>`<div style="flex:1;text-align:center"><div class=m style="font-size:10px">${Math.round(v)}</div><div style="background:var(--a);height:${v/mx*80}px;border-radius:4px 4px 0 0"></div><div class=m style="font-size:11px">${k}</div></div>`).join('')}</div></div>`;
 const big=[...ex].sort((a,b)=>b.amount-a.amount)[0],nd=(()=>{if(per==='t')return 0;const[a,b]=range(),e=a>today()||b<today()?b:today();return Math.round((new Date(e+'T12:00')-new Date(a+'T12:00'))/864e5)+1})();
-h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(ex.length?t/ex.length:0)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big?big.title:'-')} ${eur(big?big.amount:0)}</b></div></div>`;
+h+=`<div class=card><b>Dati</b><div class=row><span>Numero spese</span><b>${ex.length}</b></div><div class=row><span>Media per spesa</span><b>${eur(ex.length?t/ex.length:0)}</b></div>${nd?`<div class=row><span>Media al giorno</span><b>${eur(t/nd)}</b></div>`:''}<div class=row><span>Spesa più alta</span><b>${esc(big.title)} ${eur(big.amount)}</b></div></div>`;
 return h}
 const seg=()=>`<div class=card style="padding:6px"><div class=subtabs>${[['s','Spese'],['r','Risparmi']].map(([k,l])=>`<button class="${sv===k?'on':''}" onclick="sv='${k}';render()">${l}</button>`).join('')}</div></div>`;
 function rec(t){
   const a=rows.filter(r=>r.type===t&&r.recurring);if(!a.length)return '';
-  return `<details class="card accordion"><summary>${t==='expense'?'Spese ricorrenti attive':'Entrate ricorrenti attive'} · ${a.length}</summary>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)}${r.end_date?' · fino a: '+fd(r.end_date):' · Per sempre'} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button><button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')+'</details>';
+  return `<details class="card accordion"><summary>${t==='expense'?'Spese ricorrenti attive':'Entrate ricorrenti attive'} · ${a.length}</summary>`+a.map(r=>`<div class=card><div class=row><div>${esc(r.title)} <b>${eur(r.amount)}</b><div class=m>prossima: ${fd(r.date)} · ${esc(r.who||'Comune')}</div></div><div><button class=s onclick="openForm('${r.type}','${r.id}')">✎</button><button class=s onclick="del('${r.id}')">✕</button></div></div></div>`).join('')+'</details>';
 }
 function savings(){
   const inc=pe('income'),ex=pe('expense'),T=sum(inc)-sum(ex),col=v=>v>=0?'var(--g)':'var(--r)';
@@ -195,22 +175,28 @@ function forecastPage(){
   months.forEach(d=>h+=forecastMonth(d));
   return h;
 }
+function historicalMonthly(type, key, excludeRecurring=true){
+  const arr=rows.filter(r=>r.type===type && r.date<key+'-01' && (!excludeRecurring || !r.recurring));
+  const by={};arr.forEach(r=>{const m=r.date.slice(0,7);by[m]=(by[m]||0)+Number(r.amount||0)});
+  return by;
+}
 function forecastValue(type,d){
-  const key=iso(d).slice(0,7);
-  const activeRec = rows.filter(r => {
-    if (r.type !== type || !r.recurring) return false;
-    const start = r.start_date || r.date;
-    if (start && start.slice(0, 7) > key) return false;
-    if (r.end_date && r.end_date.slice(0, 7) < key) return false;
-    return true;
-  });
-  const uniqueRec = [...new Map(activeRec.sort((a,b)=>a.date>b.date?-1:1).map(r=>[r.title,r])).values()];
-  const recurring = sum(uniqueRec.map(r => ({amount: r.amount || 0})));
-  return { recurring, total: recurring };
+  const key=iso(d).slice(0,7), year=d.getFullYear(), month=d.getMonth()+1;
+  const recurring=sum([...new Map(rows.filter(r=>r.type===type&&r.recurring).sort((a,b)=>a.date>b.date?-1:1).map(r=>[r.title,r])).values()].map(r=>({amount:r.amount||0})));
+  const hist=historicalMonthly(type,key,true), vals=Object.values(hist), avg=vals.length?sum(vals.map(v=>({amount:v}))) / vals.length:0;
+  const recentMonths=Object.keys(hist).sort().slice(-6), recent=recentMonths.map(k=>hist[k]), recentAvg=recent.length?recent.reduce((a,b)=>a+b,0)/recent.length:avg;
+  const prevKey=iso(new Date(year,month-2,1,12)).slice(0,7),prev=hist[prevKey]||0;
+  const priorYearKey=iso(new Date(year-1,month-1,1,12)).slice(0,7),priorYear=hist[priorYearKey]||0;
+  const seasonal=priorYear>0&&recentAvg>0?(priorYear*0.5+recentAvg*0.3+avg*0.2):(prev>0&&recentAvg>0?(prev*0.35+recentAvg*0.45+avg*0.2):(recentAvg||avg));
+  return {recurring,variable:seasonal,total:recurring+seasonal,prev,priorYear,avg,recentAvg};
 }
 function unpaidBillsForMonth(key){return sum(rows.filter(r=>r.type==='bill'&&r.date.startsWith(key)&&!r.paid));}
 function forecastTips(d,e,i,totalOut,totalIn){
   const key=iso(d).slice(0,7),month=d.getMonth(),tips=[];
+  const prev=forecastValue('expense',new Date(d.getFullYear(),d.getMonth(),1));
+  if(prev.priorYear>0 && Math.abs(prev.priorYear-prev.recentAvg)>prev.recentAvg*0.15){
+    tips.push(prev.priorYear>prev.recentAvg?`Nello stesso mese dell'anno scorso hai speso circa ${eur(prev.priorYear)}: valuta di prevedere un margine extra.`:`Lo stesso mese dell'anno scorso era più leggero: potresti avere spazio per contenere le uscite.`);
+  }
   const categoryTotals={};
   rows.filter(r=>r.type==='expense'&&!r.recurring&&r.date.startsWith(key)).forEach(r=>categoryTotals[r.category||'Altro']=(categoryTotals[r.category||'Altro']||0)+Number(r.amount||0));
   const top=Object.entries(categoryTotals).sort((a,b)=>b[1]-a[1])[0];
@@ -221,57 +207,33 @@ function forecastTips(d,e,i,totalOut,totalIn){
   if(bills)tips.push(`Sono presenti scadenze per ${eur(bills)}: tienile separate dal budget delle spese ordinarie.`);
   if(totalOut>totalIn)tips.push(`Le uscite previste superano le entrate di circa ${eur(totalOut-totalIn)}: valuta in anticipo quali spese non necessarie rimandare.`);
   else if(totalIn>0&&totalOut<totalIn*0.8)tips.push(`La previsione lascia un buon margine: circa ${eur(totalIn-totalOut)} prima di eventuali spese impreviste.`);
-  if(!tips.length)tips.push('La previsione mostra il calcolo esatto delle spese/entrate ricorrenti programmate per questo mese.');
+  if(!tips.length)tips.push('La previsione combina storico, andamento recente, ricorrenze e stagionalità quando i dati disponibili lo consentono.');
   return tips.slice(0,3);
 }
 function forecastMonth(d){
   const key=iso(d).slice(0,7), e=forecastValue('expense',d), i=forecastValue('income',d), bills=unpaidBillsForMonth(key);
   const totalOut=e.total+bills, totalIn=i.total, saving=totalIn-totalOut, tips=forecastTips(d,e,i,totalOut,totalIn);
-  return `<div class="card forecast"><h3 style="margin:2px 0 10px">${d.toLocaleDateString('it-IT',{month:'long',year:'numeric'})}</h3><div class=row><span>Uscite previste (ricorrenti + scadenze)</span><b>${eur(totalOut)}</b></div><div class=row><span>Entrate previste</span><b>${eur(totalIn)}</b></div><div class=row><span>Risparmio previsto</span><b style="color:${saving>=0?'var(--g)':'var(--r)'}">${eur(saving)}</b></div><div class="card tip"><b>Per te</b>${tips.map(x=>`<div style="margin-top:7px">💡 ${x}</div>`).join('')}</div></div>`;
+  return `<div class="card forecast"><h3 style="margin:2px 0 10px">${d.toLocaleDateString('it-IT',{month:'long',year:'numeric'})}</h3><div class=row><span>Uscite previste</span><b>${eur(totalOut)}</b></div><div class=row><span>Entrate previste</span><b>${eur(totalIn)}</b></div><div class=row><span>Risparmio previsto</span><b style="color:${saving>=0?'var(--g)':'var(--r)'}">${eur(saving)}</b></div><div class="card tip"><b>Per te</b>${tips.map(x=>`<div style="margin-top:7px">💡 ${x}</div>`).join('')}</div></div>`;
 }
 async function recur(){let ch=false;
-for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){
-  if(r.end_date && r.date > r.end_date) continue;
-  let c=r,n=0;
-  while(c&&c.date<=today()&&n++<24){
-    const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
-    const nextD=addM(c.date);
-    if(c.end_date && nextD > c.end_date) break;
-    const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,date:nextD,start_date:c.start_date||c.date,end_date:c.end_date||null,recurring:true}).select();ch=true;c=nx&&nx[0]
-  }
-}
+for(const r of rows.filter(x=>(x.type==='expense'||x.type==='income')&&x.recurring&&x.date<=today())){let c=r,n=0;
+while(c&&c.date<=today()&&n++<24){const{data}=await sb.from('entries').update({recurring:false}).eq('id',c.id).eq('recurring',true).select();if(!data||!data.length)break;
+const{data:nx}=await sb.from('entries').insert({type:c.type,title:c.title,amount:c.amount,category:c.category,who:c.who,date:addM(c.date),recurring:true}).select();ch=true;c=nx&&nx[0]}}
 return ch}
 function openForm(T,id){T=T||{spese:sv==='r'?'income':'expense',scadenze:'bill'}[tab]||'expense';
 const r=id?rows.find(x=>x.id===id):{},x=T==='appointment',b=T==='bill',i=T==='income',e=T==='expense',W=['Comune','Simone','Valeria'];
 const op=(a,v)=>a.map(o=>`<option${o===v?' selected':''}>${o}</option>`).join('');
-const hasEndDate=!!r.end_date;
 dlg.innerHTML=`<h3>${id?'Modifica':'Nuova'} ${{expense:'spesa',income:'entrata',appointment:'appuntamento',bill:'scadenza'}[T]}</h3>`+
 (i?`<div class=m>Motivazione</div><select id=f_c>${op(INC,r.category)}</select>`:`<input id=f_t placeholder=Descrizione value="${esc(r.title)}">`)+
 (x?'':`<input id=f_a type=number step=0.01 inputmode=decimal placeholder="Importo €" value="${r.amount??''}">`)+
 (e?`<select id=f_c>${op(CATS,r.category)}</select>`:'')+
 (e||i?`<div class=m>${i?'Ricevuto da':'Speso da'}</div><select id=f_w>${op(W,r.who||'Comune')}</select>`:'')+
 (b?`<div class=m>Chi paga</div><select id=f_p>${op(W,r.payer||'Comune')}</select><label><input id=f_l type=checkbox style="width:auto"${r.alt?' checked':''}> Alterna Simone/Valeria ogni mese</label>`:'')+
-`<div class=m>Data inizio / Riferimento</div><input id=f_d type=date value="${r.start_date||r.date||today()}">`+(x?`<input id=f_h type=time value="${r.time||''}">`:'')+
-(x?'':`<label><input id=f_r type=checkbox style="width:auto"${r.recurring?' checked':''} onchange="toggleRecOptions(this.checked)"> Ricorrente ogni mese</label>`+
-`<div id="rec_opts" style="display:${r.recurring?'block':'none'};margin-top:6px;padding:8px;background:#8881;border-radius:8px">`+
-`<div class=m>Durata ricorrenza</div>`+
-`<select id="f_dur" onchange="toggleEndDate(this.value)">`+
-`<option value="forever"${!hasEndDate?' selected':''}>Per sempre</option>`+
-`<option value="until"${hasEndDate?' selected':''}>Fino a data specifica</option>`+
-`</select>`+
-`<div id="end_date_wrap" style="display:${hasEndDate?'block':'none'};margin-top:6px">`+
-`<div class=m>Data fine</div><input id=f_end type=date value="${r.end_date||''}">`+
-`</div></div>`)+
+`<div class=m>Data</div><input id=f_d type=date value="${r.date||today()}">`+(x?`<input id=f_h type=time value="${r.time||''}">`:'')+
+(x?'':`<label><input id=f_r type=checkbox style="width:auto"${r.recurring?' checked':''}> Ricorrente ogni mese</label>`)+
 `<button class=b onclick="save('${T}','${id||''}')">Salva</button><button class=s onclick="dlg.close()">Annulla</button>`;dlg.showModal()}
-
-function toggleRecOptions(checked){const el=document.getElementById('rec_opts');if(el)el.style.display=checked?'block':'none';}
-function toggleEndDate(val){const el=document.getElementById('end_date_wrap');if(el)el.style.display=val==='until'?'block':'none';}
-
 async function save(T,id){const g=k=>window[k]?window[k].value:null,t=T==='income'?g('f_c'):(g('f_t')||'').trim();if(!t||!f_d.value)return;
-const isRec=!!(window.f_r&&f_r.checked);
-const dur=g('f_dur');
-const endDate=(isRec && dur==='until')?g('f_end'):null;
-const r={type:T,title:t,date:f_d.value,start_date:f_d.value,end_date:endDate,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:isRec};
+const r={type:T,title:t,date:f_d.value,amount:window.f_a?parseFloat(f_a.value.replace(',','.'))||0:null,category:g('f_c'),who:g('f_w'),payer:g('f_p'),alt:!!(window.f_l&&f_l.checked),time:g('f_h')||null,recurring:!!(window.f_r&&f_r.checked)};
 const{error}=await(id?sb.from('entries').update(r).eq('id',id):sb.from('entries').insert(r));if(error){alert('Errore nel salvataggio: '+error.message);return}dlg.close();load()}
 async function del(id){if(confirm('Eliminare?')){await sb.from('entries').delete().eq('id',id);load()}}
 async function pay(id){const r=rows.find(x=>x.id===id);await sb.from('entries').update({paid:true}).eq('id',id);
